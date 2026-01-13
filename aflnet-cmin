@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "aflnet-cmin: corpus minimization for AFLNet-style inputs" >&2
+
+afl_cmin_args=()
+aflnet_exec_args=()
+
+IN_DIR=""
+OUT_DIR=""
+NETINFO=""
+PROTO=""
+SERVER_WAIT=""
+GRACEFUL=0
+INPUT_MODE="raw"
+
+# Pass-through options for afl-cmin.
+MEM_LIMIT=""
+TIMEOUT=""
+EDGES_ONLY=0
+CRASHES_ONLY=0
+QEMU_MODE=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i)
+      IN_DIR="$2"; afl_cmin_args+=("-i" "$2"); shift 2 ;;
+    -o)
+      OUT_DIR="$2"; afl_cmin_args+=("-o" "$2"); shift 2 ;;
+    -m)
+      MEM_LIMIT="$2"; afl_cmin_args+=("-m" "$2"); shift 2 ;;
+    -t)
+      TIMEOUT="$2"; afl_cmin_args+=("-t" "$2"); shift 2 ;;
+    -e)
+      EDGES_ONLY=1; afl_cmin_args+=("-e"); shift 1 ;;
+    -C)
+      CRASHES_ONLY=1; afl_cmin_args+=("-C"); shift 1 ;;
+    -Q)
+      QEMU_MODE=1; afl_cmin_args+=("-Q"); shift 1 ;;
+
+    # AFLNet-ish options for aflnet-exec.
+    -N)
+      NETINFO="$2"; shift 2 ;;
+    -P)
+      PROTO="$2"; shift 2 ;;
+    -D)
+      SERVER_WAIT="$2"; shift 2 ;;
+    -K)
+      GRACEFUL=1; shift 1 ;;
+    -I)
+      INPUT_MODE="$2"; shift 2 ;;
+
+    --)
+      shift 1
+      break
+      ;;
+
+    *)
+      echo "[-] Unknown option: $1" >&2
+      echo "Usage: $0 -i in -o out -N tcp://127.0.0.1/PORT -P PROTO [afl-cmin opts] -- server [args...]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$IN_DIR" || -z "$OUT_DIR" || -z "$NETINFO" || -z "$PROTO" || $# -lt 1 ]]; then
+  echo "Usage: $0 -i in -o out -N tcp://127.0.0.1/PORT -P PROTO [options] -- server [args...]" >&2
+  echo "  Options: -m megs -t msec -e -C -Q -D usec -K -I auto|raw|len" >&2
+  exit 1
+fi
+
+aflnet_exec_args+=("-N" "$NETINFO" "-P" "$PROTO" "-I" "$INPUT_MODE")
+if [[ -n "$SERVER_WAIT" ]]; then
+  aflnet_exec_args+=("-D" "$SERVER_WAIT")
+fi
+if [[ "$GRACEFUL" -eq 1 ]]; then
+  aflnet_exec_args+=("-K")
+fi
+
+# We intentionally rely on stdin redirection from afl-cmin (no -f / @@ needed).
+# afl-cmin will run: aflnet-exec ... -- server ... < testcase
+exec afl-cmin "${afl_cmin_args[@]}" -- ./aflnet-exec "${aflnet_exec_args[@]}" -- "$@"

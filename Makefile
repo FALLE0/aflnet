@@ -24,7 +24,7 @@ MISC_PATH   = $(PREFIX)/share/afl
 
 # PROGS intentionally omit afl-as, which gets installed elsewhere.
 
-PROGS       = afl-gcc afl-fuzz afl-replay aflnet-replay afl-showmap afl-tmin afl-gotcpu afl-analyze
+PROGS       = afl-gcc afl-fuzz afl-replay aflnet-replay aflnet-exec afl-showmap afl-tmin afl-gotcpu afl-analyze
 SH_PROGS    = afl-plot afl-cmin afl-whatsup
 
 CFLAGS     ?= -O3 -funroll-loops
@@ -43,6 +43,11 @@ else
 endif
 
 COMM_HDR    = alloc-inl.h config.h debug.h types.h
+
+# Ubuntu 18 toolchains may default to PIE for executables. Ensure aflnet.o is
+# position-independent so it can be linked into PIE binaries.
+aflnet.o: aflnet.c $(COMM_HDR) aflnet.h
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
 all: test_x86 $(PROGS) afl-as test_build all_done
 
@@ -76,6 +81,9 @@ afl-replay: afl-replay.c $(COMM_HDR) aflnet.o aflnet.h | test_x86
 	$(CC) $(CFLAGS) $@.c aflnet.o -o $@ $(LDFLAGS)
 
 aflnet-replay: aflnet-replay.c $(COMM_HDR) aflnet.o aflnet.h | test_x86
+	$(CC) $(CFLAGS) $@.c aflnet.o -o $@ $(LDFLAGS)
+
+aflnet-exec: aflnet-exec.c $(COMM_HDR) aflnet.o aflnet.h | test_x86
 	$(CC) $(CFLAGS) $@.c aflnet.o -o $@ $(LDFLAGS)
 
 afl-showmap: afl-showmap.c $(COMM_HDR) | test_x86
