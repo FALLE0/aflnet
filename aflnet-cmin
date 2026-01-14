@@ -69,6 +69,13 @@ if [[ -z "$IN_DIR" || -z "$OUT_DIR" || -z "$NETINFO" || -z "$PROTO" || $# -lt 1 
   exit 1
 fi
 
+# afl-cmin defaults to a 100 MB memory limit, which often breaks network servers
+# (leading to empty -Z output). Default to unlimited unless the user overrides.
+if [[ -z "${MEM_LIMIT:-}" ]]; then
+  afl_cmin_args+=("-m" "none")
+  echo "[i] No -m specified; defaulting to -m none" >&2
+fi
+
 aflnet_exec_args+=("-N" "$NETINFO" "-P" "$PROTO" "-I" "$INPUT_MODE")
 if [[ -n "$SERVER_WAIT" ]]; then
   aflnet_exec_args+=("-D" "$SERVER_WAIT")
@@ -79,4 +86,22 @@ fi
 
 # We intentionally rely on stdin redirection from afl-cmin (no -f / @@ needed).
 # afl-cmin will run: aflnet-exec ... -- server ... < testcase
-exec afl-cmin "${afl_cmin_args[@]}" -- ./aflnet-exec "${aflnet_exec_args[@]}" -- "$@"
+
+# Locate aflnet-exec: prefer local build, otherwise use PATH.
+AFLNET_EXEC=""
+if [[ -x "aflnet-exec" ]]; then
+  AFLNET_EXEC="aflnet-exec"
+else
+  AFLNET_EXEC="$(command -v aflnet-exec || true)"
+fi
+
+if [[ -z "$AFLNET_EXEC" ]]; then
+  echo "[-] Error: can't find aflnet-exec (build it or put it in PATH)" >&2
+  exit 1
+fi
+
+# afl-cmin checks the target binary for '__AFL_SHM_ID'. In our workflow, the
+# *server* is the instrumented component, not aflnet-exec. Skip this check.
+export AFL_SKIP_BIN_CHECK=1
+
+exec afl-cmin "${afl_cmin_args[@]}" -- "$AFLNET_EXEC" "${aflnet_exec_args[@]}" -- "$@"

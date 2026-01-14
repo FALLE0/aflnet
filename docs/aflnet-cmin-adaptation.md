@@ -258,6 +258,37 @@ recompile with -fPIC
 
 ---
 
+## 9. 问题修复记录（2026-01-13）：`no instrumentation output` / `-Z` 输出为空
+
+### 9.1 现象
+
+- 在 appweb（HTTP）等 server 上执行 `aflnet-cmin` 时，`afl-cmin` 在“测试 target / 生成 trace”阶段报：`no instrumentation output detected`。
+- 进一步单独运行 `afl-showmap -Z` 时，虽然命令 `exit=0`，但输出 trace 文件是 **0 行**（无 tuple）。
+
+### 9.2 根因
+
+- 这不是“没有插桩”本身，而是 **`afl-cmin` 默认的 `-m 100`（100MB 内存限制）对某些网络 server 过小**。
+- server 在该限制下出现早期失败/异常行为（或连接/回放流程被破坏），导致 `afl-showmap -Z` 无法观察到有效 coverage tuple，从而被 `afl-cmin` 误判为“无 instrumentation 输出”。
+
+### 9.3 复现与验证方式
+
+对同一个 seed，对比下面两条命令（关键是 `-m 100` vs `-m none`）：
+
+```bash
+AFL_CMIN_ALLOW_ANY=1 afl-showmap -m 100  -t none -o /tmp/mem100.z  -Z -- aflnet-exec ... < seed
+AFL_CMIN_ALLOW_ANY=1 afl-showmap -m none -t none -o /tmp/memnone.z -Z -- aflnet-exec ... < seed
+```
+
+- `mem100.z` 可能为 0 行
+- `memnone.z` 应该能看到大量 tuple 行
+
+### 9.4 修复措施（已固化）
+
+- 在封装脚本 `aflnet-cmin` 中增加默认策略：**若用户未显式提供 `-m`，则自动追加 `-m none`**，并输出提示：`[i] No -m specified; defaulting to -m none`。
+- 用户仍可自行指定 `-m 100` / `-m 500` / `-m none` 等覆盖默认值。
+- 若系统中存在多份 `aflnet-cmin`（例如一个在工作区、一个在其他目录或 PATH 中），需要确认实际运行的那一份包含上述默认逻辑。
+
+
 ## 9. 本次对话产出清单
 
 新增：

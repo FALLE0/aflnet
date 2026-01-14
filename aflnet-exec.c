@@ -398,11 +398,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  if (optind >= argc || strcmp(argv[optind], "--") != 0) {
-    usage(argv[0]);
-    return 1;
-  }
-  optind++;
+  /* getopt(3) consumes "--". Accept with or without it. */
+  if (optind < argc && strcmp(argv[optind], "--") == 0) optind++;
 
   if (optind >= argc) {
     usage(argv[0]);
